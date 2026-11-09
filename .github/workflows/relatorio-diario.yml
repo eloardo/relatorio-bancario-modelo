@@ -1,0 +1,29 @@
+name: Relatório bancário diário
+
+on:
+  schedule:
+    # 09:47 UTC = 06:47 em Brasília, todos os dias
+    - cron: "47 9 * * *"
+  workflow_dispatch: {}   # permite rodar na hora pelo botão "Run workflow"
+
+jobs:
+  relatorio:
+    # não roda no repositório modelo (só nas cópias criadas com "Use this template")
+    if: ${{ !github.event.repository.is_template }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Gerar e enviar relatório
+        env:
+          PLUGGY_CLIENT_ID: ${{ secrets.PLUGGY_CLIENT_ID }}
+          PLUGGY_CLIENT_SECRET: ${{ secrets.PLUGGY_CLIENT_SECRET }}
+          PLUGGY_ITEM_IDS: ${{ secrets.PLUGGY_ITEM_IDS }}
+          EMAIL_REMETENTE: ${{ secrets.EMAIL_REMETENTE }}
+          EMAIL_SENHA_APP: ${{ secrets.EMAIL_SENHA_APP }}
+          EMAIL_DESTINO: ${{ secrets.EMAIL_DESTINO }}
+        run:
