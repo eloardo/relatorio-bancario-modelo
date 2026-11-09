@@ -302,6 +302,35 @@ STATUS_OK = {"UPDATED"}
 STATUS_TXT = {"UPDATED": "atualizado", "UPDATING": "atualizando", "LOGIN_ERROR": "erro de acesso",
               "OUTDATED": "desatualizado", "WAITING_USER_INPUT": "aguardando você"}
 
+HORAS_SEM_SYNC = 36  # o Meu Pluggy sincroniza a cada 24h; acima disso, algo parou
+
+
+def horas_sem_sync(c, agora=None):
+    """Horas desde a última sincronização do banco, ou None se a data não veio."""
+    if not c.get("atualizado"):
+        return None
+    try:
+        d = datetime.fromisoformat(c["atualizado"].replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if d.tzinfo is None:
+        d = d.replace(tzinfo=timezone.utc)
+    return ((agora or datetime.now(timezone.utc)) - d).total_seconds() / 3600
+
+
+def problema_conexao(c):
+    """Texto do problema da conexão, ou None se está tudo certo."""
+    if c["erro"]:
+        return c["erro"]
+    if c["status"] not in STATUS_OK:
+        return STATUS_TXT.get(c["status"], c["status"])
+    h = horas_sem_sync(c)
+    if h is not None and h > HORAS_SEM_SYNC:
+        ult = datetime.fromisoformat(c["atualizado"].replace("Z", "+00:00")).astimezone(BRT)
+        return (f"sem sincronizar há {int(h)} h (última em {ult.strftime('%d/%m %H:%M')}). "
+                f"Os valores deste banco podem estar desatualizados; confira em meu.pluggy.ai")
+    return None
+
 
 def txt_fatura(c, hoje):
     f = c.get("fatura")
@@ -334,11 +363,10 @@ def gerar_html(con, r):
     h2 = 'style="font-size:15px;margin:0 0 10px;color:#222"'
 
     # Avisos de conexão
-    avisos = [c for c in con if c["erro"] or c["status"] not in STATUS_OK]
+    avisos = [(c, problema_conexao(c)) for c in con]
+    avisos = [(c, p) for c, p in avisos if p]
     if avisos:
-        itens = "".join(
-            f'<li><b>{e(c["banco"])}</b>: {e(c["erro"] or STATUS_TXT.get(c["status"], c["status"]))}</li>'
-            for c in avisos)
+        itens = "".join(f'<li><b>{e(c["banco"])}</b>: {e(p)}</li>' for c, p in avisos)
         sec.append(f'<div style="background:#fff4e5;border:1px solid #f0c27b;border-radius:10px;padding:12px 16px;margin:0 0 14px">'
                    f'<b>Atenção com conexões</b><ul style="margin:6px 0 0;padding-left:18px">{itens}</ul></div>')
 
@@ -484,7 +512,7 @@ def main():
 
     if not a.demo and not a.no_send:
         assunto = f"Extrato Bancos {r['hoje'].strftime('%d/%m/%Y')}"
-        if any(c["erro"] or c["status"] not in STATUS_OK for c in con):
+        if any(problema_conexao(c) for c in con):
             assunto = "⚠ " + assunto
         enviar_email(assunto, corpo, gerar_texto(r))
         print("E-mail enviado.")
